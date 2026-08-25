@@ -11,6 +11,8 @@ description: >-
   code-reviewer agent. Use it even when the request sounds narrow or casual; a
   single-file glance still benefits from the evidence bar and the
   false-positive list here.
+meta:
+  tags: [review, quality, python]
 ---
 
 # Reviewing Python for correctness
