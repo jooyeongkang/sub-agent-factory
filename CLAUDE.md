@@ -44,8 +44,10 @@ The pipeline is one direction with three stages, and each has one module:
 
 - `agent.py` — parses and validates one canonical file into an `Agent`. This is
   where the schema lives; there is no separate JSON Schema to keep in sync.
-- `loader.py` — discovers `agents/**/*.md`, parses all of them, enforces global
-  invariants (unique names).
+- `skill.py` — the same job for one `SKILL.md`. Kept separate rather than
+  generalised: two formats is not enough evidence of a shared abstraction.
+- `loader.py` — discovers `agents/**/*.md` and `skills/*/SKILL.md`, parses all of
+  them, enforces global invariants (unique names).
 - `targets/` — emitters. `base.Target` is the contract; `opencode.py` implements
   it; `__init__.py` is the registry.
 - `builder.py` — renders a target's tree into `dist/` and installs it.
@@ -55,7 +57,7 @@ Adding a runtime means one `Target` subclass plus a line in `_TARGETS`. If a
 change to support a new runtime requires touching `agent.py`, that field
 probably belongs in the canonical schema rather than being special-cased.
 
-### Two invariants that are easy to break
+### Three invariants that are easy to break
 
 **The build tree mirrors the runtime's config root, not its agent directory.**
 `Target.output_path` returns `agent/<name>.md`, and `user_config_dir()` returns
@@ -67,6 +69,13 @@ copy of the tree with no path rewriting. Returning the agent subdirectory from
 `targets.base.put`, which skips `None` and empty dicts. Emitting `model: null`
 would override the runtime's own default rather than inheriting it.
 
+**Agents and skills carry identity in opposite ways, so `name` is emitted for
+one and not the other.** An agent is identified by its filename, so
+`OpencodeTarget.render` deliberately omits `name`. Every skill file is called
+`SKILL.md` and the runtime checks the frontmatter `name` against the containing
+directory, so `render_skill` must emit it. Dropping it there installs a skill
+the runtime rejects.
+
 ### Canonical format notes
 
 - `name` must equal the filename stem. opencode derives the agent id from the
@@ -75,7 +84,12 @@ would override the runtime's own default rather than inheriting it.
 - Unknown frontmatter keys are a hard error — catching typos like `modle:` is
   most of the value of validating at all. Free-form data goes under `meta:`,
   which is never emitted.
-- `targets:` restricts which runtimes emit an agent; omitted means all.
+- `targets:` restricts which runtimes emit an agent or skill; omitted means all.
+- A skill is a directory, not a file: `skills/<name>/SKILL.md`, with `name`
+  matching the *directory*. Files beside `SKILL.md` are copied verbatim on
+  build, because the runtime treats that directory as the skill's private base.
+  Discovery is deliberately one level deep — `skills/a/b/SKILL.md` has no
+  unambiguous name, so it is not found rather than being guessed at.
 - Validation collects every problem in a file before raising, and `load_agents`
   aggregates across files. Preserve that — reporting one error per run makes
   fixing a batch of agents miserable.
@@ -92,6 +106,11 @@ Verified against opencode 1.18.15 and <https://opencode.ai/config.json>:
 - `permission` values are `allow` / `ask` / `deny`, either bare or as a mapping
   of glob pattern to verdict. Tool names are deliberately not enumerated in
   validation — opencode adds tools faster than this repo can track.
+- Skills are globbed as `skills/<name>/SKILL.md` under the same config roots as
+  agents, so they install through the same tree copy with no new path logic.
+  Loading one is gated by `permission.skill`, which takes a pattern mapping.
+  The SKILL.md frontmatter is *not* described by `config.json` — it is a file
+  format, documented at <https://opencode.ai/docs/skills>.
 
 Check the config schema rather than reasoning from memory when changing the
 emitter; the agent schema has moved more than once.

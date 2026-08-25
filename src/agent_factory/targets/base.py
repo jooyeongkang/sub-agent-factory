@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional
 import yaml
 
 from ..agent import Agent
+from ..skill import Skill
 
 
 class Target:
@@ -23,6 +24,13 @@ class Target:
     summary = ""
     #: Path inside the build output that mirrors the runtime's own layout.
     subdir = ""
+    #: Where this runtime keeps skills, relative to the same config root. Left
+    #: empty by a target that has no skill concept, which then emits none.
+    skills_subdir = ""
+
+    @property
+    def supports_skills(self) -> bool:
+        return bool(self.skills_subdir)
 
     def output_path(self, agent: Agent) -> Path:
         """Where this agent lands, relative to the runtime's config root.
@@ -32,7 +40,18 @@ class Target:
         """
         return Path(self.subdir) / "{}.md".format(agent.name)
 
+    def skill_output_path(self, skill: Skill) -> Path:
+        """Where this skill lands, relative to the runtime's config root.
+
+        The directory carries the skill's name; the file inside it is always
+        `SKILL.md`.
+        """
+        return Path(self.skills_subdir) / skill.name / "SKILL.md"
+
     def render(self, agent: Agent) -> str:
+        raise NotImplementedError
+
+    def render_skill(self, skill: Skill) -> str:
         raise NotImplementedError
 
     def user_config_dir(self) -> Path:

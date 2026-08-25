@@ -1,10 +1,12 @@
 # sub-agent-factory
 
-One place to write sub-agents, compiled out to whichever agent runtime you use.
+One place to write sub-agents and the skills that support them, compiled out to
+whichever agent runtime you use.
 
 Each agent is a single markdown file: YAML frontmatter for configuration, body
-for the system prompt. `agent-factory` validates them against a schema and
-renders them into the exact on-disk layout a runtime expects.
+for the system prompt. Each skill is a directory holding a `SKILL.md` and any
+supporting files. `agent-factory` validates them against a schema and renders
+them into the exact on-disk layout a runtime expects.
 
 opencode is the currently supported target.
 
@@ -74,11 +76,63 @@ Anything else is rejected as a typo — that is the point of validating.
 
 The body is the system prompt, and must not be empty.
 
+## Writing a skill
+
+Skills hold reference material a runtime loads on demand, rather than material
+that sits in a system prompt on every call. They are the right home for command
+recipes, checklists, and catalogues an agent only sometimes needs.
+
+A skill is a *directory*, because the runtime treats that directory as the
+skill's private base and every skill file is called `SKILL.md`:
+
+```
+skills/
+  code-refactor/
+    SKILL.md
+    references/          # optional, copied verbatim on build
+      notes.md
+```
+
+```markdown
+---
+name: code-refactor
+description: Reference for behaviour-preserving Python refactoring - baselines, characterisation tests, and the changes that look safe but are not.
+meta:
+  tags: [refactoring]
+---
+
+Working material for restructuring Python without changing what it does.
+...
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `name` | string | **Required.** kebab-case, ≤64 chars, must equal the *directory* name. |
+| `description` | string | **Required.** One line, ≤1024 chars. This is what the model reads to decide whether to load the skill. |
+| `license` | string | Optional. |
+| `compatibility` | string or mapping | Optional. Runtime compatibility hints. |
+| `metadata` | mapping | Optional. String → string only; emitted to the runtime. |
+| `targets` | list | Restrict which targets emit this skill. Omit to mean all. |
+| `meta` | mapping | Free-form repo bookkeeping. Never emitted. |
+
+The identity rule is the same idea as an agent's, moved up one level: an agent
+is named by its filename, a skill by its directory. Because of that, `name` **is**
+emitted into a skill's frontmatter, where an agent's deliberately is not.
+
+To let an agent load a skill without prompting, grant it in the agent's
+frontmatter:
+
+```yaml
+permission:
+  skill:
+    "code-refactor": allow
+```
+
 ## Commands
 
 ```sh
 agent-factory targets       # supported runtimes
-agent-factory list          # every agent and its description
+agent-factory list          # every agent and skill, with descriptions
 agent-factory list --json   # same, machine-readable
 agent-factory validate      # schema check, reports all problems at once
 agent-factory build         # render into dist/
@@ -100,4 +154,8 @@ Subclass `Target` in `src/agent_factory/targets/`, implement `render`,
 `user_config_dir`, and `project_config_dir`, and add an instance to `_TARGETS`
 in `targets/__init__.py`. Nothing else needs to change.
 
-Agents can then opt in or out per runtime with `targets:`.
+For a runtime with a skill concept, also set `skills_subdir` and implement
+`render_skill`. A target that leaves `skills_subdir` empty simply emits no
+skills, so it costs nothing to ignore.
+
+Agents and skills can then opt in or out per runtime with `targets:`.

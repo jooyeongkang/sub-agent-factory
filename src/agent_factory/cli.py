@@ -9,9 +9,10 @@ from pathlib import Path
 from typing import List, Optional, Sequence
 
 from .agent import Agent
+from .skill import Skill
 from .builder import build_target, install_target
 from .errors import FactoryError
-from .loader import find_root, load_agents
+from .loader import find_root, load_agents, load_skills
 from .targets import Target, all_targets, get_target, target_names
 
 
@@ -21,13 +22,14 @@ def _resolve_targets(names: Optional[Sequence[str]]) -> List[Target]:
     return [get_target(n) for n in names]
 
 
-def _load(root_arg: Optional[str]) -> "tuple[Path, List[Agent]]":
+def _load(root_arg: Optional[str]) -> "tuple[Path, List[Agent], List[Skill]]":
     root = Path(root_arg).resolve() if root_arg else find_root()
     agents = load_agents(root)
+    skills = load_skills(root)
     for agent in agents:
         for warning in agent.warnings:
             print("warning: {}: {}".format(agent.source, warning), file=sys.stderr)
-    return root, agents
+    return root, agents, skills
 
 
 def cmd_targets(args: argparse.Namespace) -> int:
@@ -37,67 +39,97 @@ def cmd_targets(args: argparse.Namespace) -> int:
 
 
 def cmd_validate(args: argparse.Namespace) -> int:
-    root, agents = _load(args.root)
+    root, agents, skills = _load(args.root)
     print("ok: {} agent(s) valid in {}".format(len(agents), root / "agents"))
+    if skills:
+        print("ok: {} skill(s) valid in {}".format(len(skills), root / "skills"))
     return 0
 
 
 def cmd_list(args: argparse.Namespace) -> int:
-    _, agents = _load(args.root)
+    _, agents, skills = _load(args.root)
     if args.target:
         agents = [a for a in agents if a.applies_to(args.target)]
+        skills = [s for s in skills if s.applies_to(args.target)]
 
     if args.json:
         print(
             json.dumps(
-                [
-                    {
-                        "name": a.name,
-                        "description": a.description,
-                        "mode": a.mode,
-                        "model": a.model,
-                        "targets": a.targets,
-                        "tags": a.meta.get("tags", []),
-                        "source": str(a.source),
-                    }
-                    for a in agents
-                ],
+                {
+                    "agents": [
+                        {
+                            "name": a.name,
+                            "description": a.description,
+                            "mode": a.mode,
+                            "model": a.model,
+                            "targets": a.targets,
+                            "tags": a.meta.get("tags", []),
+                            "source": str(a.source),
+                        }
+                        for a in agents
+                    ],
+                    "skills": [
+                        {
+                            "name": s.name,
+                            "description": s.description,
+                            "targets": s.targets,
+                            "tags": s.meta.get("tags", []),
+                            "source": str(s.source),
+                        }
+                        for s in skills
+                    ],
+                },
                 indent=2,
             )
         )
         return 0
 
-    if not agents:
-        print("no agents found")
+    if not agents and not skills:
+        print("no agents or skills found")
         return 0
-    width = max(len(a.name) for a in agents)
-    for agent in agents:
-        print("{:{w}}  {}".format(agent.name, agent.description, w=width))
+
+    width = max([len(x.name) for x in list(agents) + list(skills)] or [0])
+    if agents:
+        print("agents:")
+        for agent in agents:
+            print("  {:{w}}  {}".format(agent.name, agent.description, w=width))
+    if skills:
+        if agents:
+            print("")
+        print("skills:")
+        for skill in skills:
+            print("  {:{w}}  {}".format(skill.name, skill.description, w=width))
     return 0
 
 
 def cmd_build(args: argparse.Namespace) -> int:
-    root, agents = _load(args.root)
+    root, agents, skills = _load(args.root)
     out_root = Path(args.out).resolve() if args.out else root / "dist"
     for target in _resolve_targets(args.target):
-        result = build_target(agents, target, out_root, clean=not args.no_clean)
+        result = build_target(
+            agents, target, out_root, clean=not args.no_clean, skills=skills
+        )
         note = ""
         if result.skipped:
             note = " ({} skipped by `targets:`)".format(len(result.skipped))
         print(
-            "built {} agent(s) for {} -> {}{}".format(
-                len(result.files), target.name, result.out_dir, note
+            "built {} agent(s), {} skill(s) for {} -> {}{}".format(
+                len(result.files),
+                len(result.skill_files),
+                target.name,
+                result.out_dir,
+                note,
             )
         )
     return 0
 
 
 def cmd_install(args: argparse.Namespace) -> int:
-    root, agents = _load(args.root)
+    root, agents, skills = _load(args.root)
     out_root = Path(args.out).resolve() if args.out else root / "dist"
 
     for target in _resolve_targets(args.target):
-        result = build_target(agents, target, out_root, clean=True)
+        result = build_target(agents, target, out_root, clean=True, skills=skills)
         if args.dest:
             dest = Path(args.dest).resolve()
         elif args.scope == "project":
@@ -112,7 +144,7 @@ def cmd_install(args: argparse.Namespace) -> int:
             "linked" if args.link else "installed"
         )
         print(
-            "{} {} agent(s) for {} -> {}".format(
+            "{} {} file(s) for {} -> {}".format(
                 verb, len(installed.installed), target.name, installed.dest
             )
         )
@@ -139,15 +171,16 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("targets", help="list supported runtimes")
     p.set_defaults(func=cmd_targets)
 
-    p = sub.add_parser("validate", help="check every agent against the schema")
+    p = sub.add_parser("validate", help="check every agent and skill against the schema")
     p.set_defaults(func=cmd_validate)
 
-    p = sub.add_parser("list", help="list agents")
-    p.add_argument("--target", choices=target_names(), help="only agents for this target")
+    p = sub.add_parser("list", help="list agents and skills")
+    p.add_argument("--target", choices=target_names(),
+                   help="only entries for this target")
     p.add_argument("--json", action="store_true", help="machine-readable output")
     p.set_defaults(func=cmd_list)
 
-    p = sub.add_parser("build", help="render agents into dist/")
+    p = sub.add_parser("build", help="render agents and skills into dist/")
     p.add_argument("--target", action="append", choices=target_names(),
                    help="build only this target (repeatable)")
     p.add_argument("--out", help="output root (default: <root>/dist)")
@@ -155,7 +188,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="keep existing files in the output directory")
     p.set_defaults(func=cmd_build)
 
-    p = sub.add_parser("install", help="build, then place agents where the runtime finds them")
+    p = sub.add_parser("install",
+                       help="build, then place output where the runtime finds it")
     p.add_argument("--target", action="append", choices=target_names(),
                    help="install only this target (repeatable)")
     p.add_argument("--scope", choices=("user", "project"), default="user",
