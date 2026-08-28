@@ -19,7 +19,7 @@ meta:
 
 # Diagnosing from a traceback alone
 
-This supplements [`agents/debugger.md`](../../agents/debugger.md) and pairs with
+This supplements [`agents/code-debugger.md`](../../agents/code-debugger.md) and pairs with
 the [`debugging`](../debugging/SKILL.md) skill. The division:
 
 | What you have | Use |

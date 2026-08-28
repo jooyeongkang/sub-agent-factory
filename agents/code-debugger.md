@@ -1,5 +1,5 @@
 ---
-name: debugger
+name: code-debugger
 description: Finds the root cause of a failing Python test, traceback, hang, or wrong result, and reports it with evidence
 mode: subagent
 temperature: 0.1

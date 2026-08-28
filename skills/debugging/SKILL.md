@@ -6,18 +6,18 @@ description: >-
   path, extracting observations from a program with nobody at an interactive
   prompt, ruling out environment faults that impersonate logic bugs, attacking
   order-, timing- and data-dependent flakiness, and diagnosing hangs, segfaults
-  and vanished exceptions. Supplements the debugger subagent. Use this whenever
+  and vanished exceptions. Supplements the code-debugger subagent. Use this whenever
   Python code is failing and the cause is not yet known, in any phrasing — "why
   does this test fail", "fix this traceback", "this returns the wrong number",
   "it works locally but not in CI", "this test is flaky", "it hangs", "why is
-  this None" — and whenever work is delegated to the debugger agent.
+  this None" — and whenever work is delegated to the code-debugger agent.
 meta:
   tags: [debugging, python, testing]
 ---
 
 # Debugging Python
 
-This supplements [`agents/debugger.md`](../../agents/debugger.md). That prompt
+This supplements [`agents/code-debugger.md`](../../agents/code-debugger.md). That prompt
 owns the judgment — what counts as a root cause, what standard of proof applies,
 when to stop. This skill owns the mechanics: the commands, the recipes, and the
 catalogues. Where they overlap the agent prompt wins; it is what the caller
